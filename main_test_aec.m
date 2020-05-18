@@ -1,7 +1,5 @@
 clear;
 clc; close all;
-% fs = 8000;
-% M = fs/2 + 1;
 frameSize = 2048;
 %% Load near speech signal
 % [v1, fs] = audioread('timitcorpus/timit/timit/dr8-mbcg0/sa1.wav');
@@ -54,55 +52,41 @@ player = audioDeviceWriter('SupportVariableSizeInput', true, ...
 load farspeech;
 farspeech = x;
 %% Generate echo of the far speech signal
-channel_choice = 3; % 1: delta 2: MATLAB default 3: custom echo 
-switch channel_choice
-    case 1 % Delta
-        roomImpulseResponse = zeros(1, M); roomImpulseResponse(1) = 1;
-        room = dsp.FIRFilter('Numerator', roomImpulseResponse);
-        farSpeechEcho = room(farspeech);
-    case 2 % MATLAB default
-        [B, A] = cheby2(4,20,[0.1 0.7]);
-        impulseResponseGenerator = dsp.IIRFilter(...
-            'Numerator', [zeros(1,6) B], ...
-            'Denominator', A);
-        roomImpulseResponse = impulseResponseGenerator( ...
-        (log(0.99*rand(1,M)+0.01).*sign(randn(1,M)).*exp(-0.002*(1:M)))');
-        roomImpulseResponse = roomImpulseResponse/norm(roomImpulseResponse)*4;
-        room = dsp.FIRFilter('Numerator', roomImpulseResponse'); 
-        farSpeechEcho = room(farspeech);
-    case 3        
-%         delay = 0.02; % seconds
-%         alpha = 0.65; % echo strength
-        delay = 0.3; % seconds
-        alpha = 0.1; % echo strength
-        farSpeechEcho = echo_gen(farspeech, alpha, delay, fs);
-    otherwise % Delta
-        roomImpulseResponse = zeros(1, M); roomImpulseResponse(1) = 1;
-        room = dsp.FIRFilter('Numerator', roomImpulseResponse);
-        farSpeechEcho = room(farspeech);
-end
+delay = 0.2; % seconds
+alpha = 0.1; % echo strength
+farSpeechEcho = echo_gen(farspeech, alpha, delay, fs);
+
+% Impulse response = delta function
+% roomImpulseResponse = zeros(1, M); roomImpulseResponse(1) = 1;
+% room = dsp.FIRFilter('Numerator', roomImpulseResponse);
+% farSpeechEcho = room(farspeech);
+
+% Impulse response = RIR
+% [B, A] = cheby2(4,20,[0.1 0.7]);
+% impulseResponseGenerator = dsp.IIRFilter(...
+%     'Numerator', [zeros(1,6) B], ...
+%     'Denominator', A);
+% roomImpulseResponse = impulseResponseGenerator( ...
+% (log(0.99*rand(1,M)+0.01).*sign(randn(1,M)).*exp(-0.002*(1:M)))');
+% roomImpulseResponse = roomImpulseResponse/norm(roomImpulseResponse)*4;
+% room = dsp.FIRFilter('Numerator', roomImpulseResponse'); 
+% farSpeechEcho = room(farspeech);
 %% Generate mic signal
 micSignal = farSpeechEcho + nearspeech + 0.001*randn(length(nearspeech), 1);
 sound(micSignal, fs);
 pause(10);
 %% Adaptive filter
-p = 2;
-N = length(farspeech);
-mu = 0.12;
-alfa = 0.002;
+alpha = 0.002;
 c = 0.001;
-w = zeros(1,N);
-d = micSignal;
-for i=1:N
+w = zeros(1, length(farspeech));
+for i = 1:length(farspeech)
     tic
-    mu = alfa/(c+(x(i)'*x(i)));
-    e(i) = d(i) - w(i)' * x(i);
-    ce(i)=e(i);
-    w(i+1) = w(i) + mu * ce(i) * x(i);
+    mu = alpha/(c+(x(i)'*x(i)));
+    e(i) = micSignal(i) - w(i)'* x(i);
+    w(i+1) = w(i) + mu * e(i) * x(i);
     toc
     timeForEachIteration(i) = toc;
 end
-
 sound(e);
 pause(10);
 
