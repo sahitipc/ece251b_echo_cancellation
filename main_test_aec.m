@@ -1,6 +1,8 @@
 clear;
 clc; close all;
 frameSize = 2048;
+fs = 8000;
+M = fs/2 + 1;
 %% Load near speech signal
 % [v1, fs] = audioread('timitcorpus/timit/timit/dr8-mbcg0/sa1.wav');
 % [x1, fs] = audioread('timitcorpus/timit/timit/dr8-fbcg1/sa2.wav');
@@ -52,50 +54,57 @@ player = audioDeviceWriter('SupportVariableSizeInput', true, ...
 load farspeech;
 farspeech = x;
 %% Generate echo of the far speech signal
-delay = 0.2; % seconds
-alpha = 0.1; % echo strength
-farSpeechEcho = echo_gen(farspeech, alpha, delay, fs);
-
-% Impulse response = delta function
-% roomImpulseResponse = zeros(1, M); roomImpulseResponse(1) = 1;
-% room = dsp.FIRFilter('Numerator', roomImpulseResponse);
-% farSpeechEcho = room(farspeech);
+% delay = 0.05; % seconds
+% alpha = 0.1; % echo strength
+% farSpeechEcho = echo_gen(farspeech, alpha, delay, fs);
+% [b,a] = fir1(20, 0.5);
+% farSpeechEcho = filter(b, a, farspeech);
 
 % Impulse response = RIR
-% [B, A] = cheby2(4,20,[0.1 0.7]);
-% impulseResponseGenerator = dsp.IIRFilter(...
-%     'Numerator', [zeros(1,6) B], ...
-%     'Denominator', A);
-% roomImpulseResponse = impulseResponseGenerator( ...
-% (log(0.99*rand(1,M)+0.01).*sign(randn(1,M)).*exp(-0.002*(1:M)))');
-% roomImpulseResponse = roomImpulseResponse/norm(roomImpulseResponse)*4;
-% room = dsp.FIRFilter('Numerator', roomImpulseResponse'); 
-% farSpeechEcho = room(farspeech);
+[B, A] = cheby2(4,20,[0.1 0.7]);
+impulseResponseGenerator = dsp.IIRFilter(...
+    'Numerator', [zeros(1,6) B], ...
+    'Denominator', A);
+roomImpulseResponse = impulseResponseGenerator( ...
+(log(0.99*rand(1,M)+0.01).*sign(randn(1,M)).*exp(-0.05*(1:M)))');
+roomImpulseResponse = roomImpulseResponse/norm(roomImpulseResponse)*4;
+figure;plot(roomImpulseResponse); title('Room Impulse Response'); xlabel('samples'); ylabel('Amplitude');grid on;
+room = dsp.FIRFilter('Numerator', roomImpulseResponse'); 
+farSpeechEcho = room(farspeech);
 %% Generate mic signal
 micSignal = farSpeechEcho + nearspeech + 0.001*randn(length(nearspeech), 1);
-sound(micSignal, fs);
-pause(10);
+% sound(micSignal, fs);
+% pause(40);
 %% Adaptive filter
-alpha = 0.002;
-c = 0.001;
-w = zeros(1, length(farspeech));
-for i = 1:length(farspeech)
-    tic
-    mu = alpha/(c+(x(i)'*x(i)));
-    e(i) = micSignal(i) - w(i)'* x(i);
-    w(i+1) = w(i) + mu * e(i) * x(i);
-    toc
-    timeForEachIteration(i) = toc;
-end
-sound(e);
-pause(10);
+% alpha = 0.002;
+% c = 0.001;
+% filter_length = 32;
+% w = zeros(1, length(farspeech));
+% for i = 1:length(farspeech)
+%     tic
+%     mu = alpha/(c+(x(i)'*x(i)));
+% %     r(i) = 0;
+% %     for j = 1:filter_length
+% %         if (i-(j-1)) > 0
+% %             r(i) = r(i) + x(i-(j-1))*w(j);
+% %         end            
+% %     end
+% %     e(i) = micSignal(i) - r(i);
+%     e(i) = micSignal(i) - w(i)' * x(i);
+% %     w = w + mu * e(i) * x(i);
+%     w(i+1) = w(i) + mu * e(i) * x(i);
+%     toc
+%     timeForEachIteration(i) = toc;
+% end
+% sound(e);
+% pause(10);
 
-% filter_order = 32;
-% mu = 0.005;
-% echoCanceller = dsp.LMSFilter('Method','Normalized LMS' , ...
-%     'Length',filter_order, ...
-%     'StepSize',mu);
-% echoCanceller    = dsp.FrequencyDomainAdaptiveFilter('Length', 2048, ...
+filter_order = 256;
+mu = 0.1;
+echoCanceller = dsp.LMSFilter('Method','Normalized LMS' , ...
+    'Length',filter_order, ...
+    'StepSize',mu);
+% echoCanceller    = dsp.FrequencyDomainAdaptiveFilter('Length', 64, ...
 %                     'StepSize', 0.025, ...
 %                     'InitialPower', 0.01, ...
 %                     'AveragingFactor', 0.98, ...
@@ -132,34 +141,34 @@ AECScope1.Title         = 'Echo Return Loss Enhancement';
 
 num_frames = floor(length(nearspeech)/frameSize);
 
-% for i = 1:num_frames
-%     start_idx = (i-1)*frameSize+1;
-%     end_idx = i*frameSize;
-%     near = nearspeech(start_idx:end_idx)';
-%     far = farspeech(start_idx:end_idx)';
-%     mic = micSignal(start_idx:end_idx)';
-%     far_echo = farSpeechEcho(start_idx:end_idx)';
-%     % Apply NLMS filter
-%     [y, e] = echoCanceller(far, mic);
-%     player(e);
-%     % Compute ERLE
-%     erle = diffAverager((e - near).^2)./ farEchoAverager(far_echo.^2);
-%     erledB = -10*log10(erle);
-%     AECScope1(near, mic, e, erledB);
-% end
-% release(AECScope1);
-e = e';
-erle = diffAverager((e - nearspeech).^2)./ farEchoAverager(farSpeechEcho.^2);
-erledB = -10*log10(erle);
-AECScope1(nearspeech, micSignal, e, erledB);
+for i = 1:num_frames
+    start_idx = (i-1)*frameSize+1;
+    end_idx = i*frameSize;
+    near = nearspeech(start_idx:end_idx);
+    far = farspeech(start_idx:end_idx);
+    mic = micSignal(start_idx:end_idx);
+    far_echo = farSpeechEcho(start_idx:end_idx);
+    % Apply NLMS filter
+    [y, e] = echoCanceller(far, mic);
+    player(e);
+    % Compute ERLE
+    erle = diffAverager((e - near).^2)./ farEchoAverager(far_echo.^2);
+    erledB = -10*log10(erle);
+    AECScope1(near, mic, e, erledB);
+end
 release(AECScope1);
+% e = e';
+% erle = diffAverager((e - nearspeech).^2)./ farEchoAverager(farSpeechEcho.^2);
+% erledB = -10*log10(erle);
+% AECScope1(nearspeech, micSignal, e, erledB);
+% release(AECScope1);
 
 %% Functions
-function y = echo_gen(x, alpha, delay, fs)
-    D = delay * fs;  
-    y = zeros(size(x));  
-    y(1:D) = x(1:D);     
-     for i=D+1:length(x)  
-       y(i) = x(i) + alpha*x(i-D);  
-     end  
-end
+% function y = echo_gen(x, alpha, delay, fs)
+%     D = delay * fs;  
+%     y = zeros(size(x));  
+%     y(1:D) = x(1:D);     
+%      for i=D+1:length(x)  
+%        y(i) = x(i) + alpha*x(i-D);  
+%      end  
+% end
