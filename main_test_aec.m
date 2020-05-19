@@ -161,9 +161,9 @@ for i = 1:length(orders)
     end
 end
 % T = array2table(erle_mat, 'VariableNames', string(step_sizes), 'RowNames', string(orders));
-% writetable(T, 'nlms_params_audio2.csv', 'WriteRowNames',true);
-audiowrite('clean_signal_audio2.wav', clean_sig, fs);
-audiowrite('micSignal_audio2.wav', micSignal, fs);
+% writetable(T, 'fdaf_params_audio2.csv', 'WriteRowNames',true);
+audiowrite('fdaf_clean_signal_audio2.wav', clean_sig, fs);
+audiowrite('fdaf_micSignal_audio2.wav', micSignal, fs);
 
 max_val = max(max(erle_mat));
 [iopt, jopt] = find(erle_mat == max_val);
